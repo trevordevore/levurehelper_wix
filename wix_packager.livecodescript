@@ -3,81 +3,127 @@ local sScriptsToCompile
 local sWineCmd, sWinePathCmd
 
 command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFilename, pFileSettingsA
-  local tConfigA, tTreeId, tFolders, tFiles, tComponentNode, tFileNode
+  local tError, tConfigA, tTreeId, tFolders, tFiles, tComponentNode, tFileNode
   local tInstallDirNode, tFileId
 
   _replaceVariables xFiledata, pBuildProfile
 
   put levureAppGet("wix") into tConfigA
 
-  put revXMLCreateTree(xFiledata, true, true, false) into tTreeId
-  if tTreeId begins with "xmlerr," then
-    answer error "Error parsing XML:" && item 2 to -1 of tTreeId
-    return empty
+  if tError is empty then
+    put revXMLCreateTree(xFiledata, true, true, false) into tTreeId
+    if tTreeId begins with "xmlerr," then
+      put "Error parsing XML:" && item 2 to -1 of tTreeId into tError
+    end if
   end if
 
-  put revXMLMatchingNode(tTreeId, "/Wix/Product", empty, "Id", "INSTALLDIR", -1) into tInstallDirNode
-  if tInstallDirNode begins with "xmlerr," then
-    answer error "Error finding INSTALLDIR node:" && item 2 to -1 of tInstallDirNode
-    return empty
+  if tError is empty then
+    put revXMLMatchingNode(tTreeId, "/Wix/Product", empty, "Id", "INSTALLDIR", -1) into tInstallDirNode
+    if tInstallDirNode begins with "xmlerr," then
+      answer error "Error finding INSTALLDIR node:" && item 2 to -1 of tInstallDirNode
+      return empty
+    end if
   end if
 
-  put foldersInFolder(pOutputFolder & "/windows") into tFolders
-  put filesInFolder(pOutputFolder & "/windows") into tFiles
+  if tError is empty then
+    put foldersInFolder(pOutputFolder & "/windows") into tFolders
+    put filesInFolder(pOutputFolder & "/windows") into tFiles
 
-  ## Add files to Directory node
-  repeat for each line tFilename in tFiles
-    revXMLAddNode tTreeId, tInstallDirNode, "Component", empty
-    put the result into tComponentNode
-    if tComponentNode begins with "xmlerr," then
-      answer error "Unable to add component to directory node:" && item 2 to -1 of tComponentNode
-      return empty
+    ## Add files to Directory node
+    repeat for each line tFilename in tFiles
+      _addFileToTree tTreeId, tInstallDirNode, tFilename
+      put the result into tError
+
+      if tError is not empty then
+        exit repeat
+      end if
+    end repeat
+  end if
+
+  if tError is empty then
+    repeat for each line tFilename in tFolders
+      _addDirectoryToTree tTreeId, tInstallDirNode, tFilename
+      put the result into tError
+
+      if tError is not empty then
+        exit repeat
+      end if
+    end repeat
+  end if
+
+  if tError is empty then
+    if pFileSettingsA["compile"] is not false then
+      put pOutputFolder & "/" & pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
     end if
+  end if
 
-    revXMLAddNode tTreeId, tComponentNode, "File", empty
-    put the result into tFileNode
-    if tFileNode begins with "xmlerr," then
-      answer error "Unable to add file to component node:" && item 2 to -1 of tFileNode
-      return empty
-    end if
+  if tTreeId is an integer then
+    revXMLDeleteTree tTreeId
+  end if
 
-    put _uniqueFileId(tFilename) into tFileId
-
-    revXMLSetAttribute tTreeId, tComponentNode, "Id", tFileId
-    revXMLSetAttribute tTreeId, tComponentNode, "Guid", "{" & uuid() & "}"
-
-    revXMLSetAttribute tTreeId, tFileNode, "Id", tFileId
-    revXMLSetAttribute tTreeId, tFileNode, "Name", tFilename
-    revXMLSetAttribute tTreeId, tFileNode, "KeyPath", "yes"
-    revXMLSetAttribute tTreeId, tFileNode, "ShortName", _uniqueShortName( _fileExtractExtension(tFilename) )
-    revXMLSetAttribute tTreeId, tFileNode, "DiskId", "1"
-    revXMLSetAttribute tTreeId, tFileNode, "Source", ".\windows\" & tFilename
-  end repeat
-
-  /*
-  Examples:
-  Source: ".\windows\MyApp.exe"; DestDir: "{app}"; Flags: ignoreversion sign
-  Source: ".\windows\levure.livecodescript"; DestDir: "{app}"; Flags: ignoreversion
-  Source: ".\windows\helpers\*"; DestDir: "{app}\helpers"; Flags: ignoreversion recursesubdirs createallsubdirs
-  */
-  repeat for each line tFilename in tFolders
-    -- if filesInFolder(pOutputFolder & "/windows/" & tFilename) is empty and foldersInFolder(pOutputFolder & "/windows/" & tFilename) is empty then
-    --   put _q("Name: `{app}\" & tFilename & "`") & cr after tDirFiles
-    -- else
-    --   put _q("Source: `.\windows\" & tFilename & "\*`; DestDir: `{app}" & "\" & tFilename & "`;") after tInstallerFiles
-
-    --   put _flagsForFilename(tConfigA, tFilename, true) into tFlags
-    --   if tFlags is not empty then
-    --     put space & tFlags after tInstallerFiles
-    --   end if
-    --   put cr after tInstallerFiles
-    -- end if
-  end repeat
-
-  if pFileSettingsA["compile"] is not false then
-    put pOutputFolder & "/" & pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
+  if tError is not empty then
+    answer error tError
   end if
 end processCopyFilesFile
+
+
+private command _addDirectoryToTree pTreeId, pParentNode, pFolder, pParentPath
+  local tError, tDirectoryNode, tFiles, tFolders, tFolder
+
+  revXMLAddNode pTreeId, pParentNode, "Directory", empty
+  put the result into tDirectoryNode
+  if tDirectoryNode begins with "xmlerr," then
+    return "Unable to add directory node:" && item 2 to -1 of tDirectoryNode for error
+  end if
+
+  revXMLSetAttribute pTreeId, tDirectoryNode, "Id", pFolder
+  revXMLSetAttribute pTreeId, tDirectoryNode, "Name", pFolder
+
+  put filesInFolder(pFolder) into tFiles
+
+  repeat for each line tFilename in tFiles
+    _addFileToTree pTreeId, tDirectoryNode, tFilename
+  end repeat
+
+  put foldersInFolder(pFolder) into tFolders
+
+  repeat for each line tFolder in tFolders
+    _addDirectoryToTree pTreeId, tDirectoryNode, tFolder, pParentPath
+  end repeat
+
+  return tError
+end _addDirectoryToTree
+
+
+private command _addFileToTree pTreeId, pParentNode, pFilename
+  local tComponentNode, tFileNode, tFileId
+
+  revXMLAddNode pTreeId, pParentNode, "Component", empty
+  put the result into tComponentNode
+  if tComponentNode begins with "xmlerr," then
+    return "Unable to add component to directory node:" && item 2 to -1 of tComponentNode for error
+  end if
+
+  revXMLAddNode pTreeId, tComponentNode, "File", empty
+  put the result into tFileNode
+  if tFileNode begins with "xmlerr," then
+    return "Unable to add file to component node:" && item 2 to -1 of tFileNode for error
+  end if
+
+  put _uniqueFileId(pFilename) into tFileId
+
+  revXMLSetAttribute pTreeId, tComponentNode, "Id", tFileId
+  revXMLSetAttribute pTreeId, tComponentNode, "Guid", "{" & uuid() & "}"
+
+  revXMLSetAttribute pTreeId, tFileNode, "Id", tFileId
+  revXMLSetAttribute pTreeId, tFileNode, "Name", pFilename
+  revXMLSetAttribute pTreeId, tFileNode, "KeyPath", "yes"
+  revXMLSetAttribute pTreeId, tFileNode, "ShortName", _uniqueShortName( _fileExtractExtension(pFilename) )
+  revXMLSetAttribute pTreeId, tFileNode, "DiskId", "1"
+  revXMLSetAttribute pTreeId, tFileNode, "Source", ".\windows\" & pFilename
+
+  return empty
+end _addFileToTree
 
 
 command packagingComplete pBuildProfile, pOutputFolder
