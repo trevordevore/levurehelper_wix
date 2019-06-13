@@ -42,11 +42,11 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
 
   # Add files
   if tError is empty then
-    put foldersInFolder(pOutputFolder & "/windows") into tFolders
-    put filesInFolder(pOutputFolder & "/windows") into tFiles
+    put _foldersInFolder(pOutputFolder & "/windows") into tFolders
+    put _filesInFolder(pOutputFolder & "/windows") into tFiles
 
     repeat for each line tFilename in tFiles
-      _addFileToTree tTreeId, tInstallDirNode, tFilename
+      _addFileToTree tTreeId, tInstallDirNode, pOutputFolder, pOutputFolder & "/windows", tFilename
       put the result into tError
 
       if tError is not empty then
@@ -58,7 +58,7 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
   # Add folders
   if tError is empty then
     repeat for each line tFilename in tFolders
-      _addDirectoryToTree tTreeId, tInstallDirNode, tFilename, pOutputFolder & "/windows"
+      _addDirectoryToTree tTreeId, tInstallDirNode, pOutputFolder, pOutputFolder & "/windows", tFilename
       put the result into tError
 
       if tError is not empty then
@@ -136,7 +136,7 @@ private command _addComponentIdsToFeatureNode pTreeId
 end _addComponentIdsToFeatureNode
 
 
-private command _addDirectoryToTree pTreeId, pParentNode, pFolder, pParentPath
+private command _addDirectoryToTree pTreeId, pParentNode, pRootFolder, pParentPath, pFolder
   local tError, tDirectoryNode, tFolderId, tFiles, tFolders, tFolder
 
   revXMLAddNode pTreeId, pParentNode, "Directory", empty
@@ -150,24 +150,24 @@ private command _addDirectoryToTree pTreeId, pParentNode, pFolder, pParentPath
   revXMLSetAttribute pTreeId, tDirectoryNode, "Id", tFolderId
   revXMLSetAttribute pTreeId, tDirectoryNode, "Name", pFolder
 
-  put filesInFolder(pParentPath & "/" & pFolder) into tFiles
+  put _filesInFolder(pParentPath & "/" & pFolder) into tFiles
 
   repeat for each line tFilename in tFiles
-    _addFileToTree pTreeId, tDirectoryNode, tFilename
+    _addFileToTree pTreeId, tDirectoryNode, pRootFolder, pParentPath & "/" & pFolder, tFilename
   end repeat
 
-  put foldersInFolder(pParentPath & "/" & pFolder) into tFolders
+  put _foldersInFolder(pParentPath & "/" & pFolder) into tFolders
 
   repeat for each line tFolder in tFolders
-    _addDirectoryToTree pTreeId, tDirectoryNode, tFolder, pParentPath & "/" & pFolder
+    _addDirectoryToTree pTreeId, tDirectoryNode, pRootFolder, pParentPath & "/" & pFolder, tFolder
   end repeat
 
   return tError
 end _addDirectoryToTree
 
 
-private command _addFileToTree pTreeId, pParentNode, pFilename
-  local tComponentNode, tFileNode, tFileId
+private command _addFileToTree pTreeId, pParentNode, pRootFolder, pParentFolder, pFilename
+  local tComponentNode, tFileNode, tFileId, tSourceFile
 
   revXMLAddNode pTreeId, pParentNode, "Component", empty
   put the result into tComponentNode
@@ -182,6 +182,7 @@ private command _addFileToTree pTreeId, pParentNode, pFilename
   end if
 
   put _uniqueComponentId(pFilename) into tFileId
+  put _makeRelativePath(pParentFolder & "/" & pFilename, pRootFolder) into tSourceFile
 
   revXMLSetAttribute pTreeId, tComponentNode, "Id", tFileId
   revXMLSetAttribute pTreeId, tComponentNode, "Guid", "{" & uuid() & "}"
@@ -191,7 +192,7 @@ private command _addFileToTree pTreeId, pParentNode, pFilename
   revXMLSetAttribute pTreeId, tFileNode, "KeyPath", "yes"
   revXMLSetAttribute pTreeId, tFileNode, "ShortName", _uniqueShortName( _fileExtractExtension(pFilename) )
   revXMLSetAttribute pTreeId, tFileNode, "DiskId", "1"
-  revXMLSetAttribute pTreeId, tFileNode, "Source", ".\windows\" & pFilename
+  revXMLSetAttribute pTreeId, tFileNode, "Source", tSourceFile
 
   return empty
 end _addFileToTree
@@ -338,23 +339,23 @@ command packagingComplete pBuildProfile, pOutputFolder
 end packagingComplete
 
 
-private function filesInFolder pFolder
+private function _filesInFolder pFolder
   local tFiles
 
   put files(pFolder) into tFiles
   filter tFiles without ".*"
   return tFiles
-end filesInFolder
+end _filesInFolder
 
 
-private function foldersInFolder pFolder
+private function _foldersInFolder pFolder
   local tFolders
 
   put folders(pFolder) into tFolders
   filter tFolders without ".*"
   filter tFolders without "..*"
   return tFolders
-end foldersInFolder
+end _foldersInFolder
 
 
 private function _uniqueComponentId pFilename
@@ -538,3 +539,51 @@ function _fileExtractExtension pFilePath
     return empty
   end if
 end _fileExtractExtension
+
+
+private function _makeRelativePath pFilename, pRootFolder
+  local tIndex
+  local tMatchCount = 0
+  local tNonMatchCount =0
+
+  ## NORMALIZE
+  if char 1 of pFilename is slash then delete char 1 of pFilename
+  if char 1 of pRootFolder is slash then delete char 1 of pRootFolder
+  if the last char of pFilename is slash then delete the last char of pFilename
+  if the last char of pRootFolder is slash then delete the last char of pRootFolder
+  set the itemDelimiter to slash
+
+  if pFilename is empty then return empty
+  if pRootFolder is empty then return empty
+
+  ## IS pFilename A CHILD DIRECTORY OF pRootFolder?
+  if pRootFolder is item 1 to (the number of items of pRootFolder) of pFilename then
+    delete char 1 to length(pRootFolder) + 1 of pFilename
+    put "./" before pFilename
+  else if pFilename is char 1 to length(pFilename) of pRootFolder then
+    delete char 1 to length(pFilename) + 1 of pRootFolder
+    put empty into pFilename
+    repeat with tIndex = 1 to the number of items of pRootFolder
+      put "../" after pFilename
+    end repeat
+  else
+    ## DETERMINE WHERE PATHS DIVERGE
+    repeat with tIndex = 1 to the number of items of pFilename
+      if item tIndex of pFilename is not item tIndex of pRootFolder then
+        put tIndex - 1 into tMatchCount
+        put the number of items of pRootFolder - tIndex + 1 into tNonMatchCount
+        exit repeat
+      end if
+    end repeat
+
+    if tMatchCount > 0 then
+      delete item 1 to tMatchCount of pFilename
+    end if
+
+    repeat with tIndex = 1 to tNonMatchCount
+      put "../" before pFilename
+    end repeat
+  end if
+
+  return pFilename
+end _makeRelativePath
