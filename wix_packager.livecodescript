@@ -1,14 +1,15 @@
 script "Wix Packager"
+local sUsedComponentIds, sUsedShortNames
 local sScriptsToCompile
 local sWineCmd, sWinePathCmd
 
 command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFilename, pFileSettingsA
   local tError, tConfigA, tTreeId, tFolders, tFiles, tComponentNode, tFileNode
-  local tInstallDirNode, tFileId
+  local tTargetDirNode, tInstallDirNode, tFileId
 
-  _replaceVariables xFiledata, pBuildProfile
+  -- _replaceVariables xFiledata, pBuildProfile
 
-  put levureAppGet("wix") into tConfigA
+  -- put levureAppGet("wix") into tConfigA
 
   if tError is empty then
     put revXMLCreateTree(xFiledata, true, true, false) into tTreeId
@@ -17,19 +18,33 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
     end if
   end if
 
+  # Find TARGETDIR node
   if tError is empty then
-    put revXMLMatchingNode(tTreeId, "/Wix/Product", empty, "Id", "INSTALLDIR", -1) into tInstallDirNode
+    put revXMLMatchingNode(tTreeId, "/Wix/Product", "Directory", "Id", "TARGETDIR", -1) into tTargetDirNode
     if tInstallDirNode begins with "xmlerr," then
-      answer error "Error finding INSTALLDIR node:" && item 2 to -1 of tInstallDirNode
-      return empty
+      put "Error finding INSTALLDIR node:" && item 2 to -1 of tInstallDirNode into tError
+    end if
+  end if
+
+  # Find INSTALLDIR node
+  if tError is empty then
+    put revXMLMatchingNode(tTreeId, "/Wix/Product", "Directory", "Id", "INSTALLDIR", -1) into tInstallDirNode
+    if tInstallDirNode begins with "xmlerr," then
+      put "Error finding INSTALLDIR node:" && item 2 to -1 of tInstallDirNode into tError
     end if
   end if
 
   if tError is empty then
+    _addURLProtocols tTreeId, tTargetDirNode
+    put the result into tError
+  end if
+
+
+  # Add files
+  if tError is empty then
     put foldersInFolder(pOutputFolder & "/windows") into tFolders
     put filesInFolder(pOutputFolder & "/windows") into tFiles
 
-    ## Add files to Directory node
     repeat for each line tFilename in tFiles
       _addFileToTree tTreeId, tInstallDirNode, tFilename
       put the result into tError
@@ -40,9 +55,10 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
     end repeat
   end if
 
+  # Add folders
   if tError is empty then
     repeat for each line tFilename in tFolders
-      _addDirectoryToTree tTreeId, tInstallDirNode, tFilename
+      _addDirectoryToTree tTreeId, tInstallDirNode, tFilename, pOutputFolder & "/windows"
       put the result into tError
 
       if tError is not empty then
@@ -51,15 +67,35 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
     end repeat
   end if
 
+  # Add componentref's
   if tError is empty then
-    if pFileSettingsA["compile"] is not false then
-      put pOutputFolder & "/" & pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
-    end if
+    _addComponentIdsToFeatureNode tTreeId
+    put the result into tError
   end if
+
+  # Add standard UI
+  if tError is empty then
+    _addUINodes tTreeId
+    put the result into tError
+  end if
+
+  -- if tError is empty then
+  --   if pFileSettingsA["compile"] is not false then
+  --     put pOutputFolder & "/" & pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
+  --   end if
+  -- end if
+
+  if tError is empty then
+    put textEncode(revXMLText(tTreeId, empty, true), "utf8") into url ("binfile:" & pOutputFolder & "/" & pOutputFilename)
+  end if
+
 
   if tTreeId is an integer then
     revXMLDeleteTree tTreeId
   end if
+
+  put empty into sUsedComponentIds
+  put empty into sUsedShortNames
 
   if tError is not empty then
     answer error tError
@@ -67,8 +103,41 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
 end processCopyFilesFile
 
 
+private command _addComponentIdsToFeatureNode pTreeId
+  local tError
+
+  if tError is empty then
+    local tFeatureNode
+
+    put revXMLMatchingNode(pTreeId, "/Wix/Product", "Feature", "Id", "Complete", -1) into tFeatureNode
+    if tFeatureNode begins with "xmlerr," then
+      put "Error finding Feature node:" && item 2 to -1 of tFeatureNode into tError
+    end if
+  end if
+
+  if tError is empty then
+    local tComponentRefNode, tId
+
+    sort lines of sUsedComponentIds ascending
+
+    repeat for each line tId in sUsedComponentIds
+      revXMLAddNode pTreeId, tFeatureNode, "ComponentRef", empty
+      put the result into tComponentRefNode
+      if tComponentRefNode begins with "xmlerr," then
+        put "Unable to add componentref node:" && item 2 to -1 of tComponentRefNode into tError
+        exit repeat
+      end if
+
+      revXMLSetAttribute pTreeId, tComponentRefNode, "Id", tId
+    end repeat
+  end if
+
+  return tError for error
+end _addComponentIdsToFeatureNode
+
+
 private command _addDirectoryToTree pTreeId, pParentNode, pFolder, pParentPath
-  local tError, tDirectoryNode, tFiles, tFolders, tFolder
+  local tError, tDirectoryNode, tFolderId, tFiles, tFolders, tFolder
 
   revXMLAddNode pTreeId, pParentNode, "Directory", empty
   put the result into tDirectoryNode
@@ -76,19 +145,21 @@ private command _addDirectoryToTree pTreeId, pParentNode, pFolder, pParentPath
     return "Unable to add directory node:" && item 2 to -1 of tDirectoryNode for error
   end if
 
-  revXMLSetAttribute pTreeId, tDirectoryNode, "Id", pFolder
+  put _uniqueComponentId(pFolder) into tFolderId
+
+  revXMLSetAttribute pTreeId, tDirectoryNode, "Id", tFolderId
   revXMLSetAttribute pTreeId, tDirectoryNode, "Name", pFolder
 
-  put filesInFolder(pFolder) into tFiles
+  put filesInFolder(pParentPath & "/" & pFolder) into tFiles
 
   repeat for each line tFilename in tFiles
     _addFileToTree pTreeId, tDirectoryNode, tFilename
   end repeat
 
-  put foldersInFolder(pFolder) into tFolders
+  put foldersInFolder(pParentPath & "/" & pFolder) into tFolders
 
   repeat for each line tFolder in tFolders
-    _addDirectoryToTree pTreeId, tDirectoryNode, tFolder, pParentPath
+    _addDirectoryToTree pTreeId, tDirectoryNode, tFolder, pParentPath & "/" & pFolder
   end repeat
 
   return tError
@@ -110,7 +181,7 @@ private command _addFileToTree pTreeId, pParentNode, pFilename
     return "Unable to add file to component node:" && item 2 to -1 of tFileNode for error
   end if
 
-  put _uniqueFileId(pFilename) into tFileId
+  put _uniqueComponentId(pFilename) into tFileId
 
   revXMLSetAttribute pTreeId, tComponentNode, "Id", tFileId
   revXMLSetAttribute pTreeId, tComponentNode, "Guid", "{" & uuid() & "}"
@@ -124,6 +195,91 @@ private command _addFileToTree pTreeId, pParentNode, pFilename
 
   return empty
 end _addFileToTree
+
+
+private command _addUINodes pTreeId
+  local tError, tUIXMLFile, tUIXML, tUINode
+
+  put the effective filename of me into tUIXMLFile
+  set the itemDelimiter to "/"
+  put "ui.wxs" into the last item of tUIXMLFile
+
+  put url("file:" & tUIXMLFile) into tUIXML
+
+  revXMLAppend pTreeId, "/Wix/Product/", tUIXML
+  put the result into tUINode
+  if tUINode begins with "xmlerr," then
+    put "Unable to add UI node:" && item 2 to -1 of tUINode into tError
+  end if
+
+  return tError for error
+end _addUINodes
+
+
+private command _addURLProtocols pTreeId, pParentNode
+  local tListA, tProtocol
+  local tComponentNode, tRegistryNode, tRegKeyId
+
+  put levureAppGet("url protocols") into tListA
+  repeat for each key tProtocol in tListA
+    if word 1 to -1 of line 1 of tProtocol is not empty and word 1 to -1 of line 1 of tListA[tProtocol] is not empty then
+
+      _addProtocol pTreeId, pParentNode, tProtocol, tProtocol, empty, "URL:" & tListA[tProtocol]
+      if the result is not empty then return the result
+
+      _addProtocol pTreeId, pParentNode, tProtocol, tProtocol, "URL Protocol", ""
+      if the result is not empty then return the result
+
+      _addProtocol pTreeId, pParentNode, tProtocol, \
+            tProtocol & "\DefaultIcon", \
+            empty, \
+            "C:\Program Files (x86)\ScreenSteps 4\ScreenSteps.exe,1"
+      if the result is not empty then return the result
+
+      _addProtocol pTreeId, pParentNode, tProtocol, \
+            tProtocol & "\shell\open\command", \
+            empty, \
+            "\&quot;C:\Program Files (x86)\ScreenSteps 4\ScreenSteps.exe\&quot; -url \&quot;%1\"
+      if the result is not empty then return the result
+    end if
+  end repeat
+
+  return empty
+end _addURLProtocols
+
+
+private command _addProtocol pTreeId, pParentNode, pProtocol, pKey, pName, pValue
+  local tComponentNode, tRegistryNode, tRegKeyId
+
+  revXMLAddNode pTreeId, pParentNode, "Component", empty
+  put the result into tComponentNode
+  if tComponentNode begins with "xmlerr," then
+    return "Unable to add component to directory node:" && item 2 to -1 of tComponentNode for error
+  end if
+
+  revXMLAddNode pTreeId, tComponentNode, "RegistryValue", empty
+  put the result into tRegistryNode
+  if tRegistryNode begins with "xmlerr," then
+    return "Unable to add registry value to component node:" && item 2 to -1 of tRegistryNode for error
+  end if
+
+  put _uniqueComponentId("RegURLProtocol" && pProtocol) into tRegKeyId
+
+  revXMLSetAttribute pTreeId, tComponentNode, "Id", tRegKeyId
+  revXMLSetAttribute pTreeId, tComponentNode, "Guid", "{" & uuid() & "}"
+
+  revXMLSetAttribute pTreeId, tRegistryNode, "Id", tRegKeyId
+  revXMLSetAttribute pTreeId, tRegistryNode, "Key", pKey
+  revXMLSetAttribute pTreeId, tRegistryNode, "KeyPath", "yes"
+  if pName is not empty then
+    revXMLSetAttribute pTreeId, tRegistryNode, "Name", pName
+  end if
+  revXMLSetAttribute pTreeId, tRegistryNode, "Root", "HKCR"
+  revXMLSetAttribute pTreeId, tRegistryNode, "Type", "string"
+  revXMLSetAttribute pTreeId, tRegistryNode, "Value", pValue
+
+  return empty
+end _addProtocol
 
 
 command packagingComplete pBuildProfile, pOutputFolder
@@ -201,18 +357,18 @@ private function foldersInFolder pFolder
 end foldersInFolder
 
 
-local sUsedFileIds
-private function _uniqueFileId pFilename
+private function _uniqueComponentId pFilename
   local tFileId
 
-  put _fileUniqueFileNameForList(pFilename, sUsedFileIds, "_", 255) into tFileId
-  put tFileId & cr after sUsedFileIds
+  replace space with "_" in pFilename
+
+  put _fileUniqueFileNameForList(pFilename, sUsedComponentIds, "_", 255) into tFileId
+  put tFileId & cr after sUsedComponentIds
 
   return tFileId
-end _uniqueFileId
+end _uniqueComponentId
 
 
-local sUsedShortNames
 private function _uniqueShortName pExtension
   local tShortName
 
