@@ -2,12 +2,13 @@ script "Wix Packager"
 local sUsedComponentIds, sUsedShortNames
 local sScriptsToCompile
 local sWineCmd, sWinePathCmd
+local sInstallerName
 
 command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFilename, pFileSettingsA
   local tError, tConfigA, tTreeId, tFolders, tFiles, tComponentNode, tFileNode
   local tTargetDirNode, tInstallDirNode, tFileId
 
-  -- _replaceVariables xFiledata, pBuildProfile
+  _replaceVariables xFiledata, pBuildProfile
 
   -- put levureAppGet("wix") into tConfigA
 
@@ -96,6 +97,7 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
 
   put empty into sUsedComponentIds
   put empty into sUsedShortNames
+  put empty into sInstallerName
 
   if tError is not empty then
     answer error tError
@@ -234,13 +236,13 @@ private command _addURLProtocols pTreeId, pParentNode
       _addProtocol pTreeId, pParentNode, tProtocol, \
             tProtocol & "\DefaultIcon", \
             empty, \
-            "C:\Program Files (x86)\ScreenSteps 4\ScreenSteps.exe,1"
+            "[INSTALLDIR]" & sInstallerName & ".exe,1"
       if the result is not empty then return the result
 
       _addProtocol pTreeId, pParentNode, tProtocol, \
             tProtocol & "\shell\open\command", \
             empty, \
-            "\&quot;C:\Program Files (x86)\ScreenSteps 4\ScreenSteps.exe\&quot; -url \&quot;%1\"
+            "\&quot;[INSTALLDIR]" & sInstallerName & ".exe\&quot; -url \&quot;%1\"
       if the result is not empty then return the result
     end if
   end repeat
@@ -284,58 +286,58 @@ end _addProtocol
 
 
 command packagingComplete pBuildProfile, pOutputFolder
-  local tScriptsToCompile
+  -- local tScriptsToCompile
 
-  put sScriptsToCompile into tScriptsToCompile
-  put empty into sScriptsToCompile
+  -- put sScriptsToCompile into tScriptsToCompile
+  -- put empty into sScriptsToCompile
 
-  if the platform is "win32" or _isWineInstalled() then
-    local tSettingsA, tCompilerPath
+  -- if the platform is "win32" or _isWineInstalled() then
+  --   local tSettingsA, tCompilerPath
 
-    put levureAppGet("inno setup") into tSettingsA
+  --   put levureAppGet("inno setup") into tSettingsA
 
-    if the platform is "win32" then
-      put tSettingsA["windows compiler"] into tCompilerPath
-    else
-      put tSettingsA["wine compiler"] into tCompilerPath
-    end if
+  --   if the platform is "win32" then
+  --     put tSettingsA["windows compiler"] into tCompilerPath
+  --   else
+  --     put tSettingsA["wine compiler"] into tCompilerPath
+  --   end if
 
-    if tCompilerPath is empty then return empty
+  --   if tCompilerPath is empty then return empty
 
-    local tCmd, tResult, tReturnVal
+  --   local tCmd, tResult, tReturnVal
 
-    repeat for each line tScript in tScriptsToCompile
-      # compil32 /cc "c:\isetup\samples\my script.iss"
-      if the platform is "win32" then
-        replace "/" with "\" in tScript
-        put format("\"%s\" /cc \"%s\"", tCompilerPath, tScript) into tCmd
-        put shell(tCmd) into tResult
-        put the result into tReturnVal
-      else
-        local tWineFilepath
+  --   repeat for each line tScript in tScriptsToCompile
+  --     # compil32 /cc "c:\isetup\samples\my script.iss"
+  --     if the platform is "win32" then
+  --       replace "/" with "\" in tScript
+  --       put format("\"%s\" /cc \"%s\"", tCompilerPath, tScript) into tCmd
+  --       put shell(tCmd) into tResult
+  --       put the result into tReturnVal
+  --     else
+  --       local tWineFilepath
 
-        put format("\"%s\" -w \"%s\"", sWinePathCmd, tScript) into tCmd
-        put line 1 of shell(tCmd) into tWineFilepath
-        put the result into tReturnVal
+  --       put format("\"%s\" -w \"%s\"", sWinePathCmd, tScript) into tCmd
+  --       put line 1 of shell(tCmd) into tWineFilepath
+  --       put the result into tReturnVal
 
-        if tReturnVal is empty then
-          put format("\"%s\" \"%s\" /cc \"%s\"", sWineCmd, tCompilerPath, tWineFilepath) into tCmd
-          put shell(tCmd) into tResult
-          put the result into tReturnVal
-        end if
-      end if
+  --       if tReturnVal is empty then
+  --         put format("\"%s\" \"%s\" /cc \"%s\"", sWineCmd, tCompilerPath, tWineFilepath) into tCmd
+  --         put shell(tCmd) into tResult
+  --         put the result into tReturnVal
+  --       end if
+  --     end if
 
-      if tReturnVal is 1 then
-        put "inno setup result:" && tResult & cr & "for command:" && tCmd
-        answer error param(0) && "invalid parameters passed to inno setup command line tool"
-        exit repeat
-      else if tReturnVal is not empty then
-        put "inno setup result:" && tResult & cr & "for command:" && tCmd
-        answer error param(0) && "inno setup compile failed" && tReturnVal
-        exit repeat
-      end if
-    end repeat
-  end if
+  --     if tReturnVal is 1 then
+  --       put "inno setup result:" && tResult & cr & "for command:" && tCmd
+  --       answer error param(0) && "invalid parameters passed to inno setup command line tool"
+  --       exit repeat
+  --     else if tReturnVal is not empty then
+  --       put "inno setup result:" && tResult & cr & "for command:" && tCmd
+  --       answer error param(0) && "inno setup compile failed" && tReturnVal
+  --       exit repeat
+  --     end if
+  --   end repeat
+  -- end if
 end packagingComplete
 
 
@@ -390,7 +392,9 @@ end _uniqueShortName
 
 
 private command _replaceVariables @xFileData, pBuildProfile
-  local tVersion, tConfigA
+  local tWixA, tVersion, tConfigA
+
+  put levureAppGet("wix") into tWixA
 
   put levureAppGet("version") into tVersion
   set the itemDelimiter to "."
@@ -401,23 +405,23 @@ private command _replaceVariables @xFileData, pBuildProfile
   replace textEncode("[[APP_VERSION]]", "utf8") with item 1 to 2 of tVersion in xFileData
   replace textEncode("[[BUILD]]", "utf8") with levureAppGet("build") in xFileData
   replace textEncode("[[BUILD_PROFILE]]", "utf8") with tolower(pBuildProfile) in xFileData
-
-  local tInstallerName
+  replace textEncode("[[PRODUCT_ID]]", "utf8") with uuid() in xFileData
+  replace textEncode("[[PRODUCT_UPGRADECODE]]", "utf8") with tWixA["upgrade code"] in xFiledata
 
   put levureAppGet("build profiles") into tConfigA
 
-  put tConfigA[pBuildProfile]["installer name"]["windows"] into tInstallerName
-  if tInstallerName is empty then
-    put tConfigA["all profiles"]["installer name"]["windows"] into tInstallerName
+  put tConfigA[pBuildProfile]["installer name"]["windows"] into sInstallerName
+  if sInstallerName is empty then
+    put tConfigA["all profiles"]["installer name"]["windows"] into sInstallerName
   end if
-  if tInstallerName is empty then
-    put tConfigA[pBuildProfile]["installer name"]["all platforms"] into tInstallerName
+  if sInstallerName is empty then
+    put tConfigA[pBuildProfile]["installer name"]["all platforms"] into sInstallerName
   end if
-  if tInstallerName is empty then
-    put tConfigA["all profiles"]["installer name"]["all platforms"] into tInstallerName
+  if sInstallerName is empty then
+    put tConfigA["all profiles"]["installer name"]["all platforms"] into sInstallerName
   end if
 
-  replace textEncode("[[INSTALLER_NAME]]", "utf8") with tInstallerName in xFileData
+  replace textEncode("[[INSTALLER_NAME]]", "utf8") with sInstallerName in xFileData
 end _replaceVariables
 
 
