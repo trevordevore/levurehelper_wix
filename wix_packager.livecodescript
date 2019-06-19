@@ -186,6 +186,7 @@ private command _addFileToTree pTreeId, pParentNode, pRootFolder, pParentFolder,
 
   put _uniqueComponentId(pFilename) into tFileId
   put _makeRelativePath(pParentFolder & "/" & pFilename, pRootFolder) into tSourceFile
+  replace slash with backslash in tSourceFile
 
   revXMLSetAttribute pTreeId, tComponentNode, "Id", tFileId
   revXMLSetAttribute pTreeId, tComponentNode, "Guid", "{" & uuid() & "}"
