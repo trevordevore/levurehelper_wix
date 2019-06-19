@@ -74,12 +74,6 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
     put the result into tError
   end if
 
-  # Add standard UI
-  if tError is empty then
-    _addUINodes tTreeId
-    put the result into tError
-  end if
-
   -- if tError is empty then
   --   if pFileSettingsA["compile"] is not false then
   --     put pOutputFolder & "/" & pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
@@ -200,25 +194,6 @@ private command _addFileToTree pTreeId, pParentNode, pRootFolder, pParentFolder,
 
   return empty
 end _addFileToTree
-
-
-private command _addUINodes pTreeId
-  local tError, tUIXMLFile, tUIXML, tUINode
-
-  put the effective filename of me into tUIXMLFile
-  set the itemDelimiter to "/"
-  put "ui.wxs" into the last item of tUIXMLFile
-
-  put url("file:" & tUIXMLFile) into tUIXML
-
-  revXMLAppend pTreeId, "/Wix/Product/", tUIXML
-  put the result into tUINode
-  if tUINode begins with "xmlerr," then
-    put "Unable to add UI node:" && item 2 to -1 of tUINode into tError
-  end if
-
-  return tError for error
-end _addUINodes
 
 
 private command _addURLProtocols pTreeId, pParentNode
