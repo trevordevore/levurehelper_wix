@@ -1,5 +1,5 @@
 script "Wix Packager"
-local sUsedComponentIds, sUsedShortNames
+local sUsedComponentIds, sUsedDirectoryIds, sUsedShortNames
 local sScriptsToCompile
 local sWineCmd, sWinePathCmd
 local sInstallerName
@@ -96,6 +96,7 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
   end if
 
   put empty into sUsedComponentIds
+  put empty into sUsedDirectoryIds
   put empty into sUsedShortNames
   put empty into sInstallerName
 
@@ -147,7 +148,7 @@ private command _addDirectoryToTree pTreeId, pParentNode, pRootFolder, pParentPa
     return "Unable to add directory node:" && item 2 to -1 of tDirectoryNode for error
   end if
 
-  put _uniqueComponentId(pFolder) into tFolderId
+  put _uniqueDirectoryId(pFolder) into tFolderId
 
   revXMLSetAttribute pTreeId, tDirectoryNode, "Id", tFolderId
   revXMLSetAttribute pTreeId, tDirectoryNode, "Name", pFolder
@@ -360,16 +361,35 @@ private function _foldersInFolder pFolder
 end _foldersInFolder
 
 
-private function _uniqueComponentId pFilename
+/**
+Summary: Creates a valid id for a component.
+
+Description:
+Identifiers may contain ASCII characters A-Z, a-z, digits, underscores (_), or periods (.).
+Every identifier must begin with either a letter or an underscore.
+
+Returns: nothing
+*/
+private function _uniqueComponentId pFilename, pAdd
   local tFileId
 
-  replace space with "_" in pFilename
-
+  put _convertToValidId(pFilename) into pFilename
   put _fileUniqueFileNameForList(pFilename, sUsedComponentIds, "_", 255) into tFileId
   put tFileId & cr after sUsedComponentIds
 
   return tFileId
 end _uniqueComponentId
+
+
+private function _uniqueDirectoryId pFolder, pAdd
+  local tFolderId
+
+  put _convertToValidId(pFolder) into pFolder
+  put _fileUniqueFileNameForList(pFolder, sUsedDirectoryIds, "_", 255) into tFolderId
+  put tFolderId & cr after sUsedDirectoryIds
+
+  return tFolderId
+end _uniqueDirectoryId
 
 
 private function _uniqueShortName pExtension
@@ -591,3 +611,77 @@ private function _makeRelativePath pFilename, pRootFolder
 
   return pFilename
 end _makeRelativePath
+
+
+function _convertToValidId pString
+  local tSeperator, tChar, tCode, tNewString
+
+  put "_" into tSeperator
+  put _convertHighToLowISO(pString) into pString
+
+  repeat for each char tChar in pString
+    put nativeCharToNum(tChar) into tCode
+    if (tCode >= 48 and tCode <= 57) or \
+          (tCode >= 65 and tCode <= 90) or \
+          (tCode >= 97 and tCode <= 122) or \
+          tCode is 95 or tCode is 46 then
+      put tChar after tNewString
+    else
+      put tSeperator after tNewString
+    end if
+  end repeat
+
+  return tNewString
+end _convertToValidId
+
+
+function _convertHighToLowISO pString
+  local tCode, tCodesA, tKey
+
+  ## convert high ascii chars
+  set the caseSensitive to true
+
+  if the platform is "MacOS" then
+    put "128,129,174,203,204,229,231" into tCodesA["A"]
+    put "135,136,137,138,139,140,188,190" into tCodesA["a"]
+    put "130" into tCodesA["C"]
+    put "141" into tCodesA["c"]
+    put "134,242,243,244" into tCodesA["U"]
+    put "156,157,158,159,181" into tCodesA["u"]
+    put "234,235,236,237" into tCodesA["I"]
+    put "146,147,148,149" into tCodesA["i"]
+    put "131,230,232,233" into tCodesA["E"]
+    put "142,143,144,145" into tCodesA["e"]
+    put "133,175,205,206,238,239,241" into tCodesA["O"]
+    put "151,152,153,154,155,187,191,207" into tCodesA["o"]
+    put "132" into tCodesA["N"]
+    put "150" into tCodesA["n"]
+    put "196" into tCodesA["f"]
+    put "216" into tCodesA["y"]
+    put "217" into tCodesA["Y"]
+    put "167" into tCodesA["B"]
+  else
+    put "142,143,146" into tCodesA["A"]
+    put "131,132,133,134,145,160" into tCodesA["a"]
+    put "128" into tCodesA["C"]
+    put "135" into tCodesA["c"]
+    put "154" into tCodesA["U"]
+    put "129,150,151,163" into tCodesA["u"]
+    put "139,140,141,161" into tCodesA["i"]
+    put "144" into tCodesA["E"]
+    put "130,136,137,138" into tCodesA["e"]
+    put "153" into tCodesA["O"]
+    put "148,149,162" into tCodesA["o"]
+    put "165" into tCodesA["N"]
+    put "164" into tCodesA["n"]
+    put "159" into tCodesA["f"]
+  end if
+
+  repeat for each key tKey in tCodesA
+    repeat for each item tCode in tCodesA[tKey]
+      replace numToNativeChar(tCode) with tKey in pString
+    end repeat
+  end repeat
+
+  return pString
+end _convertHighToLowISO
