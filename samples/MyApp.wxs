@@ -1,53 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-    <Product Id="{[[PRODUCT_ID]]}" Language="1033" Manufacturer="MY COMPANY" Name="[[NAME]]" UpgradeCode="{[[PRODUCT_UPGRADECODE]]}" Version="4.0">
-        <Package Comments="Package Comments" Compressed="yes" Description="[[NAME]] Installer" InstallerVersion="200" Languages="0" Manufacturer="MY COMPANY" Platform="x86" InstallScope="perMachine" />
-        <Binary Id="Icon_Information" SourceFile="Binary\Icon_Information" />
-        <Binary Id="Image_SideBanner" SourceFile="Binary\Image_SideBanner" />
-        <Binary Id="Image_TopBanner" SourceFile="Binary\Image_TopBanner" />
-        <Binary Id="Icon_Up" SourceFile="Binary\Icon_Up" />
-        <Binary Id="Icon_New" SourceFile="Binary\Icon_New" />
-        <Binary Id="Icon_Exclamation" SourceFile="Binary\Icon_Exclamation" />
-        <CustomAction ExeCommand="" FileKey="[[NAME]].exe" Id="Run" Return="asyncNoWait"/>
-        <Directory Id="TARGETDIR" Name="SourceDir">
-            <Directory Id="ProgramMenuFolder" Name="ProgramMenuFolder" ShortName="hveizjbw">
-                <Directory Id="StartMenuAppFolder" Name="[[NAME]]" ShortName="r_wbsacp" />
-            </Directory>
-            <Directory Id="ProgramFilesFolder" Name="ProgramFilesFolder" ShortName="kivzgx3p">
-                <Directory Id="INSTALLDIR" Name="[[NAME]]" ShortName="mwanugkz">
-                </Directory>
-            </Directory>
-        </Directory>
-        <Feature Id="Complete" AllowAdvertise="no" Description="Complete program features." Level="1" Title="Complete">
-          <ComponentRef Id="sufupscid_0002"/>
-        </Feature>
-        <Icon Id="MYAPP.ico" SourceFile="..\..\..\build files\MYAPP.ico"/>
-        <Media Id="1" Cabinet="setup.cab" DiskPrompt="Disk 1" EmbedCab="yes" />
-        <Property Id="DiskPrompt" Value="Installation [1]" />
-        <Property Id="MSIFACT_INSTALLDIR" Value="INSTALLDIR" />
-        <Property Id="MSIFACTUIRMOption" Value="UseRM" />
-        <Property Id="ARPURLINFOABOUT" Value="https://www.my-company.com" />
-        <Property Id="ARPURLUPDATEINFO" Value="https://www.my-company.com" />
-        <Property Id="ARPHELPLINK" Value="https://www.my-company.com" />
-        <Property Id="ARPNOMODIFY" Value="1" />
-        <Property Id="ALLUSERS" Value="2" />
-        <!-- <Property Id="MSIINSTALLPERUSER" Value="1"/> -->
-        <Property Id="DefaultUIFont" Value="UI_Font_Normal" />
-        <Property Id="ErrorDialog" Value="ErrorDlg" />
-        <InstallUISequence>
-            <Show Dialog="FatalError" OnExit="error" />
-            <Show Dialog="UserExit" OnExit="cancel" />
-            <Show Dialog="ExitDialog" OnExit="success" />
-            <Show Dialog="PrepareDlg" Before="AppSearch" />
-            <Show Dialog="MaintenanceWelcomeDlg" Before="ResumeDlg">Installed AND NOT RESUME AND NOT Preselected</Show>
-            <Show Dialog="ResumeDlg" Before="WelcomeDlg">Installed AND (RESUME OR Preselected)</Show>
-            <Show Dialog="WelcomeDlg" Before="ProgressDlg">NOT Installed</Show>
-            <Show Dialog="ProgressDlg" Before="ExecuteAction" />
-        </InstallUISequence>
-        <AdminUISequence>
-            <Show Dialog="FatalError" OnExit="error" />
-            <Show Dialog="UserExit" OnExit="cancel" />
-            <Show Dialog="ExitDialog" OnExit="success" />
-        </AdminUISequence>
-    </Product>
+  <Product Id="{[[PRODUCT_ID]]}" Language="1033" Manufacturer="MY COMPANY" Name="[[NAME]]" UpgradeCode="{[[PRODUCT_UPGRADECODE]]}" Version="4.0">
+    <Package Comments="Package Comments" Compressed="yes" Description="[[NAME]] Installer" InstallScope="perMachine" InstallerVersion="200" Languages="0" Manufacturer="MY COMPANY" Platform="x86"/>
+    <Binary Id="Icon_Information" SourceFile="Binary\Icon_Information"/>
+    <Binary Id="Image_SideBanner" SourceFile="Binary\Image_SideBanner"/>
+    <Binary Id="Image_TopBanner" SourceFile="Binary\Image_TopBanner"/>
+    <Binary Id="Icon_Up" SourceFile="Binary\Icon_Up"/>
+    <Binary Id="Icon_New" SourceFile="Binary\Icon_New"/>
+    <Binary Id="Icon_Exclamation" SourceFile="Binary\Icon_Exclamation"/>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramMenuFolder" Name="ProgramMenuFolder" ShortName="hveizjbw">
+        <Directory Id="StartMenuAppFolder" Name="[[NAME]]" ShortName="r_wbsacp"/>
+      </Directory>
+      <Directory Id="DesktopFolder" SourceName="Desktop"/>
+      <Directory Id="ProgramFilesFolder" Name="ProgramFilesFolder" ShortName="kivzgx3p">
+        <Directory Id="INSTALLDIR" Name="[[NAME]]" ShortName="mwanugkz"/>
+      </Directory>
+    </Directory>
+    <Feature AllowAdvertise="no" Description="Complete program features." Id="Complete" Level="1" Title="Complete">
+    </Feature>
+    <Icon Id="MYAPP.ico" SourceFile="..\..\..\build files\MYAPP.ico"/>
+    <Media Cabinet="setup.cab" DiskPrompt="Disk 1" EmbedCab="yes" Id="1"/>
+    <Property Id="DiskPrompt" Value="Installation [1]"/>
+    <Property Id="MSIFACT_INSTALLDIR" Value="INSTALLDIR"/>
+    <Property Id="MSIFACTUIRMOption" Value="UseRM"/>
+    <Property Id="ARPURLINFOABOUT" Value="https://www.my-company.com"/>
+    <Property Id="ARPURLUPDATEINFO" Value="https://www.my-company.com"/>
+    <Property Id="ARPHELPLINK" Value="https://www.my-company.com"/>
+    <Property Id="ARPNOMODIFY" Value="1"/>
+    <Property Id="ALLUSERS" Value="2"/>
+    <!-- <Property Id="MSIINSTALLPERUSER" Value="1"/>-->
+    <Property Id="DefaultUIFont" Value="UI_Font_Normal"/>
+    <Property Id="ErrorDialog" Value="ErrorDlg"/>
+    <InstallUISequence>
+      <Show Dialog="FatalError" OnExit="error"/>
+      <Show Dialog="UserExit" OnExit="cancel"/>
+      <Show Dialog="ExitDialog" OnExit="success"/>
+      <Show Before="AppSearch" Dialog="PrepareDlg"/>
+      <Show Before="ResumeDlg" Dialog="MaintenanceWelcomeDlg">Installed AND NOT RESUME AND NOT Preselected</Show>
+      <Show Before="WelcomeDlg" Dialog="ResumeDlg">Installed AND (RESUME OR Preselected)</Show>
+      <Show Before="ProgressDlg" Dialog="WelcomeDlg">NOT Installed</Show>
+      <Show Before="ExecuteAction" Dialog="ProgressDlg"/>
+    </InstallUISequence>
+    <AdminUISequence>
+      <Show Dialog="FatalError" OnExit="error"/>
+      <Show Dialog="UserExit" OnExit="cancel"/>
+      <Show Dialog="ExitDialog" OnExit="success"/>
+    </AdminUISequence>
+  </Product>
 </Wix>
