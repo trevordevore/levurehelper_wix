@@ -1,7 +1,6 @@
 script "Wix Packager"
 local sUsedComponentIds, sUsedDirectoryIds, sUsedShortNames
 local sScriptsToCompile
-local sWineCmd, sWinePathCmd
 local sInstallerName
 
 command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFilename, pFileSettingsA
@@ -10,7 +9,7 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
 
   _replaceVariables xFiledata, pBuildProfile
 
-  -- put levureAppGet("wix") into tConfigA
+  put pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
 
   if tError is empty then
     put revXMLCreateTree(xFiledata, true, true, false) into tTreeId
@@ -22,8 +21,13 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
   # Find TARGETDIR node
   if tError is empty then
     put revXMLMatchingNode(tTreeId, "/Wix/Product", "Directory", "Id", "TARGETDIR", -1) into tTargetDirNode
-    if tInstallDirNode begins with "xmlerr," then
-      put "Error finding INSTALLDIR node:" && item 2 to -1 of tInstallDirNode into tError
+    if tTargetDirNode begins with "xmlerr," then
+      if tTargetDirNode contains "can't find element" then
+        # This file isn't the main Product xml file (UI maybe)
+        put "cancel" into tError
+      else
+        put "Error finding TARGETDIR node:" && item 2 to -1 of tTargetDirNode into tError
+      end if
     end if
   end if
 
@@ -74,14 +78,8 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
     put the result into tError
   end if
 
-  -- if tError is empty then
-  --   if pFileSettingsA["compile"] is not false then
-  --     put pOutputFolder & "/" & pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
-  --   end if
-  -- end if
-
   if tError is empty then
-    put textEncode(revXMLText(tTreeId, empty, true), "utf8") into url ("binfile:" & pOutputFolder & "/" & pOutputFilename)
+    put textEncode(revXMLText(tTreeId, empty, true), "utf8") into xFiledata
   end if
 
 
@@ -92,9 +90,8 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
   put empty into sUsedComponentIds
   put empty into sUsedDirectoryIds
   put empty into sUsedShortNames
-  put empty into sInstallerName
 
-  if tError is not empty then
+  if tError is not empty and tError is not "cancel" then
     answer error tError
   end if
 end processCopyFilesFile
@@ -192,6 +189,40 @@ private command _addFileToTree pTreeId, pParentNode, pRootFolder, pParentFolder,
   revXMLSetAttribute pTreeId, tFileNode, "DiskId", "1"
   revXMLSetAttribute pTreeId, tFileNode, "Source", tSourceFile
 
+  # Add shortcuts to desktop and start menu for executable
+  if pFilename is levureAppGet("name") & ".exe" then
+    local tNode
+
+    revXMLAddNode pTreeId, tComponentNode, "RemoveFolder", empty
+    put the result into tNode
+
+    revXMLSetAttribute pTreeId, tNode, "Directory", "StartMenuAppFolder"
+    revXMLSetAttribute pTreeId, tNode, "Id", "removeStartMenuAppFolder"
+    revXMLSetAttribute pTreeId, tNode, "On", "uninstall"
+
+    revXMLAddNode pTreeId, tComponentNode, "Shortcut", empty
+    put the result into tNode
+
+    revXMLSetAttribute pTreeId, tNode, "Advertise", "yes"
+    revXMLSetAttribute pTreeId, tNode, "Directory", "DesktopFolder"
+    revXMLSetAttribute pTreeId, tNode, "Id", "shortcut_0001"
+    revXMLSetAttribute pTreeId, tNode, "Name", levureAppGet("name")
+    revXMLSetAttribute pTreeId, tNode, "Icon", "application.ico"
+    revXMLSetAttribute pTreeId, tNode, "ShortName", _uniqueShortName()
+    revXMLSetAttribute pTreeId, tNode, "Show", "normal"
+
+    revXMLAddNode pTreeId, tComponentNode, "Shortcut", empty
+    put the result into tNode
+
+    revXMLSetAttribute pTreeId, tNode, "Advertise", "yes"
+    revXMLSetAttribute pTreeId, tNode, "Directory", "StartMenuAppFolder"
+    revXMLSetAttribute pTreeId, tNode, "Id", "shortcut_0002"
+    revXMLSetAttribute pTreeId, tNode, "Name", levureAppGet("name")
+    revXMLSetAttribute pTreeId, tNode, "Icon", "application.ico"
+    revXMLSetAttribute pTreeId, tNode, "ShortName", _uniqueShortName()
+    revXMLSetAttribute pTreeId, tNode, "Show", "normal"
+  end if
+
   return empty
 end _addFileToTree
 
@@ -262,59 +293,61 @@ private command _addProtocol pTreeId, pParentNode, pProtocol, pKey, pName, pValu
 end _addProtocol
 
 
-command packagingComplete pBuildProfile, pOutputFolder
-  -- local tScriptsToCompile
+command packagingComplete pBuildProfile, pOutputFolder, pAppA
+  local tCert, tScript, tCandleCmd, tLightCmd, tDelCmd, tBatch, tOutputFilename
 
-  -- put sScriptsToCompile into tScriptsToCompile
-  -- put empty into sScriptsToCompile
+  put pAppA["windows signing certificate"] into tCert
 
-  -- if the platform is "win32" or _isWineInstalled() then
-  --   local tSettingsA, tCompilerPath
+  put "candle" into tCandleCmd
+  put "light" into tLightCmd
+  put "del" into tDelCmd
 
-  --   put levureAppGet("inno setup") into tSettingsA
+  set the itemDelimiter to "."
+  repeat for each line tScript in sScriptsToCompile
+    put space & quote & tScript & quote after tCandleCmd
+    put space & quote & item 1 to -2 of tScript & ".wixobj" & quote after tLightCmd
+    put space & quote & item 1 to -2 of tScript & ".wixobj" & quote after tDelCmd
+  end repeat
 
-  --   if the platform is "win32" then
-  --     put tSettingsA["windows compiler"] into tCompilerPath
-  --   else
-  --     put tSettingsA["wine compiler"] into tCompilerPath
-  --   end if
+  put " -o " & quote & sInstallerName & ".msi" & quote after tLightCmd
+  put " " & quote & sInstallerName & ".wixpdb" & quote & " /q" after tDelCmd
 
-  --   if tCompilerPath is empty then return empty
+  local tSignTool
+  put "signtool.exe" into tSignTool
 
-  --   local tCmd, tResult, tReturnVal
+  put "@ECHO OFF" & cr into tBatch
+  put "TITLE Compile Wix files" & cr after tBatch
 
-  --   repeat for each line tScript in tScriptsToCompile
-  --     # compil32 /cc "c:\isetup\samples\my script.iss"
-  --     if the platform is "win32" then
-  --       replace "/" with "\" in tScript
-  --       put format("\"%s\" /cc \"%s\"", tCompilerPath, tScript) into tCmd
-  --       put shell(tCmd) into tResult
-  --       put the result into tReturnVal
-  --     else
-  --       local tWineFilepath
+  if tCert is not empty then
+    put "set /p password=" & quote & "Enter signing certificate password: " & quote & cr after tBatch
+    put tSignTool && "sign /f" && quote & tCert & quote  && "/p %password%" && \
+          "/t http://timestamp.verisign.com/scripts/timstamp.dll" && quote & ".\windows\" & levureAppGet("name") & ".exe" & quote & cr after tBatch
+  end if
 
-  --       put format("\"%s\" -w \"%s\"", sWinePathCmd, tScript) into tCmd
-  --       put line 1 of shell(tCmd) into tWineFilepath
-  --       put the result into tReturnVal
+  put tCandleCmd & cr after tBatch
+  put tLightCmd & cr after tBatch
+  put tDelCmd & cr after tBatch
 
-  --       if tReturnVal is empty then
-  --         put format("\"%s\" \"%s\" /cc \"%s\"", sWineCmd, tCompilerPath, tWineFilepath) into tCmd
-  --         put shell(tCmd) into tResult
-  --         put the result into tReturnVal
-  --       end if
-  --     end if
+  if tCert is not empty then
+    put tSignTool && "sign /f" && quote & tCert & quote  && "/p %password%" && \
+          "/t http://timestamp.verisign.com/scripts/timstamp.dll" && quote & sInstallerName & ".msi" & quote & cr after tBatch
+  end if
+  put "PAUSE" after tBatch
 
-  --     if tReturnVal is 1 then
-  --       put "inno setup result:" && tResult & cr & "for command:" && tCmd
-  --       answer error param(0) && "invalid parameters passed to inno setup command line tool"
-  --       exit repeat
-  --     else if tReturnVal is not empty then
-  --       put "inno setup result:" && tResult & cr & "for command:" && tCmd
-  --       answer error param(0) && "inno setup compile failed" && tReturnVal
-  --       exit repeat
-  --     end if
-  --   end repeat
-  -- end if
+  put pOutputFolder & "/Wix Compiler.bat" into tOutputFilename
+
+  put textEncode(tBatch, "utf8") into url ("binfile:" & tOutputFilename)
+
+  if the platform is "win32" then
+    local tDefaultFolder
+
+    put the defaultFolder into tDefaultFolder
+    set the defaultFolder to pOutputFolder
+    launch document tOutputFilename
+  end if
+
+  put empty into sScriptsToCompile
+  put empty into sInstallerName
 end packagingComplete
 
 
@@ -419,33 +452,6 @@ private command _replaceVariables @xFileData, pBuildProfile
 
   replace textEncode("[[INSTALLER_NAME]]", "utf8") with sInstallerName in xFileData
 end _replaceVariables
-
-
-private function _isWineInstalled
-  if the platform is not "macos" then return false
-
-  local tResult, tReturnVal
-
-  put "wine" into sWineCmd
-  put shell(sWineCmd && "--version") into tResult
-  put the result into tReturnVal
-
-  if tReturnVal is not empty then
-    put "/usr/local/bin/wine" into sWineCmd
-    put shell(sWineCmd && "--version") into tResult
-    put the result into tReturnVal
-  end if
-
-  if tReturnVal is not empty then
-    put empty into sWineCmd
-    return false
-  else
-    set the itemDelimiter to "/"
-    put sWineCmd into sWinePathCmd
-    put "winepath" into the last item of sWinePathCmd
-    return true
-  end if
-end _isWineInstalled
 
 
 /**
