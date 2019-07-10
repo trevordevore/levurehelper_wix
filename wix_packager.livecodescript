@@ -9,7 +9,9 @@ command processCopyFilesFile pBuildProfile, @xFiledata, pOutputFolder, pOutputFi
 
   _replaceVariables xFiledata, pBuildProfile
 
-  put pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
+  if pOutputFilename ends with ".wxs" then
+    put pOutputFilename into line (the number of lines of sScriptsToCompile + 1) of sScriptsToCompile
+  end if
 
   if tError is empty then
     put revXMLCreateTree(xFiledata, true, true, false) into tTreeId
