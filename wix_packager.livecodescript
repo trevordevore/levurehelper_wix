@@ -195,16 +195,6 @@ private command _addFileToTree pTreeId, pParentNode, pRootFolder, pParentFolder,
   if pFilename is levureAppGet("name") & ".exe" then
     local tNode
 
-    revXMLAddNode pTreeId, tComponentNode, "RegistryValue", empty
-    put the result into tNode
-
-    revXMLSetAttribute pTreeId, tNode, "Id", "Inst"
-    revXMLSetAttribute pTreeId, tNode, "Root", "HKLM"
-    revXMLSetAttribute pTreeId, tNode, "Key", "$(var.InstallDirKey)"
-    revXMLSetAttribute pTreeId, tNode, "Name", "Installdir"
-    revXMLSetAttribute pTreeId, tNode, "Value", "[INSTALLDIR]"
-    revXMLSetAttribute pTreeId, tNode, "Type", "string"
-
     revXMLAddNode pTreeId, tComponentNode, "RemoveFolder", empty
     put the result into tNode
 
