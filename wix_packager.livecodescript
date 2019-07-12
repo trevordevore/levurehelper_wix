@@ -323,7 +323,7 @@ command packagingComplete pBuildProfile, pOutputFolder, pAppA
   if tCert is not empty then
     put "set /p password=" & quote & "Enter signing certificate password: " & quote & cr after tBatch
     put tSignTool && "sign /f" && quote & tCert & quote  && "/p %password%" && \
-          "/t http://timestamp.verisign.com/scripts/timstamp.dll" && quote & ".\windows\" & levureAppGet("name") & ".exe" & quote & cr after tBatch
+          "/t http://timestamp.comodoca.com/authenticodel" && quote & ".\windows\" & levureAppGet("name") & ".exe" & quote & cr after tBatch
   end if
 
   put tCandleCmd & cr after tBatch
@@ -332,7 +332,7 @@ command packagingComplete pBuildProfile, pOutputFolder, pAppA
 
   if tCert is not empty then
     put tSignTool && "sign /f" && quote & tCert & quote  && "/p %password%" && \
-          "/t http://timestamp.verisign.com/scripts/timstamp.dll" && quote & sInstallerName & ".msi" & quote & cr after tBatch
+          "/t http://timestamp.comodoca.com/authenticodel" && quote & sInstallerName & ".msi" & quote & cr after tBatch
   end if
   put "PAUSE" after tBatch
 
