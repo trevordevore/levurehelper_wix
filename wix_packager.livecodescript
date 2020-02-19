@@ -314,16 +314,12 @@ command packagingComplete pBuildProfile, pOutputFolder, pAppA
   put " -o " & quote & sInstallerName & ".msi" & quote after tLightCmd
   put " " & quote & sInstallerName & ".wixpdb" & quote & " /q" after tDelCmd
 
-  local tSignTool
-  put "signtool.exe" into tSignTool
-
   put "@ECHO OFF" & cr into tBatch
   put "TITLE Compile Wix files" & cr after tBatch
 
   if tCert is not empty then
     put "set /p password=" & quote & "Enter signing certificate password: " & quote & cr after tBatch
-    put tSignTool && "sign /f" && quote & tCert & quote  && "/p %password%" && \
-          "/t http://timestamp.comodoca.com/authenticodel" && quote & ".\windows\" & levureAppGet("name") & ".exe" & quote & cr after tBatch
+    _signFilesInFolder pOutputFolder & "/windows/", pOutputFolder & "/windows/", tCert, tBatch
   end if
 
   put tCandleCmd & cr after tBatch
@@ -331,7 +327,7 @@ command packagingComplete pBuildProfile, pOutputFolder, pAppA
   put tDelCmd & cr after tBatch
 
   if tCert is not empty then
-    put tSignTool && "sign /f" && quote & tCert & quote  && "/p %password%" && \
+    put "signtool.exe sign /f" && quote & tCert & quote  && "/p %password%" && \
           "/t http://timestamp.comodoca.com/authenticodel" && quote & sInstallerName & ".msi" & quote & cr after tBatch
   end if
   put "PAUSE" after tBatch
@@ -351,6 +347,45 @@ command packagingComplete pBuildProfile, pOutputFolder, pAppA
   put empty into sScriptsToCompile
   put empty into sInstallerName
 end packagingComplete
+
+
+/**
+Summary: Goes through a folder looking for files that need to be signed.
+
+Parameters:
+pRootFolder: The root folder where installer files are located.
+pFolder: The folder to process.
+xOutput: Fill in with Inno Setup syntax for signing files.
+
+Description:
+Signs `.exe` and `.dll` files.
+
+Returns: nothing
+*/
+private command _signFilesInFolder pRootFolder, pFolder, pCert, @xOutput
+  local tSourceFilesFolderName, tFilename, tSrc
+
+  set the itemDelimiter to "/"
+  put the last item of pRootFolder into tSourceFilesFolderName
+
+  repeat for each line tFilename in _filesInFolder(pFolder)
+    if tFilename ends with ".exe" or tFilename ends with ".dll" or tFilename then
+      # Fix permissions. LiveCode standalone builder sets permissions to 555 and user can't sign file.
+      _setFilePermissions pFolder & "/" & tFilename, "execute", "read", "read"
+
+      put pFolder & "/" & tFilename into tSrc
+      replace pRootFolder with empty in tSrc
+      replace "/" with "\" in tSrc
+
+      put "signtool.exe sign /f" && quote & pCert & quote  && "/p %password%" && \
+          "/t http://timestamp.comodoca.com/authenticodel" && quote & ".\" & tSourceFilesFolderName & tSrc & quote & cr after xOutput
+    end if
+  end repeat
+
+  repeat for each line tFilename in _foldersInFolder(pFolder)
+    _signFilesInFolder pRootFolder, pFolder & "/" & tFilename, pCert, xOutput
+  end repeat
+end _signFilesInFolder
 
 
 private function _filesInFolder pFolder
@@ -669,3 +704,86 @@ function _convertHighToLowISO pString
 
   return pString
 end _convertHighToLowISO
+
+
+private command _setFilePermissions pFile, pOwner, pGroup, pAll
+  local tError, tResult
+
+  put _escapeForShell(pFile) into pFile
+
+  switch the platform
+    case "Win32"
+      /*
+      Displays or changes file attributes.
+      ATTRIB [+R | -R] [+A | -A] [+S | -S] [+H | -H] [[drive:][path]filename]  [/S] [/D]
+
+      + Sets an attribute.
+      - Clears an attribute.
+      R Read-only file attribute.
+      A Archive file attribute.
+      S system file attribute.
+      H Hidden file attribute.
+      /S Processes files in all directories in the specified path.
+      /D Processes folders as well
+      */
+
+      switch pOwner
+        case "read"
+          put "+r" into pOwner
+          break
+        case "write"
+          put "-r" into pOwner
+          break
+      end switch
+      put shell (format ("attrib %s %s", pOwner, pFile) ) into tResult
+      break
+
+    case "MacOS"
+      put _executableBitFromType(pOwner) into pOwner
+      put _executableBitFromType(pGroup) into pGroup
+      put _executableBitFromType(pAll) into pAll
+      put shell(format("chmod %u%u%u %s ", pOwner, pGroup, pAll, pFile)) into tResult
+      break
+  end SWITCH
+
+  if the result is not empty then
+    put line 1 of tResult into tError
+  end if
+
+  return tError
+end _setFilePermissions
+
+
+private function _executableBitFromType pType
+  switch pType
+    case "execute"
+      put 7 into pType
+      break
+    case "write"
+      put 6 into pType
+      break
+    case "read"
+      put 5 into pType
+      break
+    default
+      put 0 into pType
+  end switch
+  return pType
+end _executableBitFromType
+
+
+private function _escapeForShell pStr
+  local tChar, tSpecialChars
+
+  if the platform is "win32" then
+    replace "/" with "\" in pStr
+    put quote & pStr & quote into pStr
+  else
+    put "\" & space & quote & "'`<>!;()[]?#$^&*=|" into tSpecialChars
+    repeat for each char tChar in tSpecialChars
+      replace tChar with ("\" & tChar) in pStr
+    end REPEAT
+  end if
+
+  return pStr
+end _escapeForShell
