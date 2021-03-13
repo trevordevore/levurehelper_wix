@@ -1,4 +1,6 @@
 script "Wix Packager"
+constant kTimeServer = "http://timestamp.sectigo.com"
+
 local sUsedComponentIds, sUsedDirectoryIds, sUsedShortNames
 local sScriptsToCompile
 local sInstallerName
@@ -328,7 +330,7 @@ command packagingComplete pBuildProfile, pOutputFolder, pAppA
 
   if tCert is not empty then
     put "signtool.exe sign /f" && quote & tCert & quote  && "/p %password%" && \
-          "/t http://timestamp.comodoca.com/authenticodel" && quote & sInstallerName & ".msi" & quote & cr after tBatch
+          "/t " & kTimeServer && quote & sInstallerName & ".msi" & quote & cr after tBatch
   end if
   put "PAUSE" after tBatch
 
@@ -378,7 +380,7 @@ private command _signFilesInFolder pRootFolder, pFolder, pCert, @xOutput
       replace "/" with "\" in tSrc
 
       put "signtool.exe sign /f" && quote & pCert & quote  && "/p %password%" && \
-          "/t http://timestamp.comodoca.com/authenticodel" && quote & ".\" & tSourceFilesFolderName & tSrc & quote & cr after xOutput
+          "/t " & kTimeServer && quote & ".\" & tSourceFilesFolderName & tSrc & quote & cr after xOutput
     end if
   end repeat
 
